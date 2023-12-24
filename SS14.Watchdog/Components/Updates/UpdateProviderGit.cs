@@ -25,8 +25,7 @@ namespace SS14.Watchdog.Components.Updates
         private readonly ILogger<UpdateProviderGit> _logger;
         private readonly string _repoPath;
         private readonly IConfiguration _configuration;
-        private bool _newPackaging;
-
+        
         public UpdateProviderGit(ServerInstance serverInstanceInstance, UpdateProviderGitConfiguration configuration, ILogger<UpdateProviderGit> logger, IConfiguration config)
         {
             _serverInstance = serverInstanceInstance;
@@ -143,7 +142,7 @@ namespace SS14.Watchdog.Components.Updates
         private async Task TryClone(CancellationToken cancel = default)
         {
             _logger.LogTrace("Cloning git repository...");
-
+            
             if(Directory.Exists(_repoPath))
                 Directory.Delete(_repoPath, true);
 
@@ -252,28 +251,9 @@ namespace SS14.Watchdog.Components.Updates
                 var serverPackage = Path.Combine(_repoPath, "release", ServerZipName);
                 var serverPlatform = GetHostSS14RID();
 
-                // check for the new packaging system, else it will fallback to the old python one
-                if (Directory.Exists(Path.Combine(_repoPath, "Content.Packaging")))
-                {
-                    _newPackaging = true;
-
-                    await CommandHelperChecked("Failed to dotnet restore", _repoPath, "dotnet", new[] { "restore" }, cancel);
-
-                    await CommandHelperChecked("Failed to build Content Packaging",
-                        _repoPath, "dotnet", new[] { "build", "Content.Packaging","--configuration", "Release", "--no-restore", "/m" }, cancel);
-                }
-                else
-                    _newPackaging = false;
-
                 if (_hybridACZ)
                 {
-                    if (_newPackaging)
-                    {
-                        await CommandHelperChecked("Failed to build Hybrid ACZ package with Content Packaging",
-                            _repoPath, "dotnet", new[] { "run", "--project", "Content.Packaging", "server", "--platform", serverPlatform, "--hybrid-acz" }, cancel);
-                    }
-                    else
-                        await CommandHelperChecked("Failed to build Hybrid ACZ package with Python", _repoPath, "python", new[] {"Tools/package_server_build.py", "--hybrid-acz", "-p", serverPlatform}, cancel);
+                    await CommandHelperChecked("Failed to build Hybrid ACZ package", _repoPath, "python", new[] {"Tools/package_server_build.py", "--hybrid-acz", "-p", serverPlatform}, cancel);
                 }
                 else
                 {
@@ -283,28 +263,15 @@ namespace SS14.Watchdog.Components.Updates
                     var binariesRoot = new Uri(new Uri(_configuration["BaseUrl"]!),
                         $"instances/{_serverInstance.Key}/binaries/");
 
-                    _logger.LogTrace("Building server packages...");
-
-                    if (_newPackaging)
-                    {
-                        await CommandHelperChecked("Failed to build server packages with Content Packaging",
-                            _repoPath, "dotnet", new[] { "run", "--project", "Content.Packaging", "server", "--platform", serverPlatform}, cancel);
-                    }
-                    else
-                        await CommandHelperChecked("Failed to build server packages with Python", _repoPath, "python", new[] {"Tools/package_server_build.py", "-p", serverPlatform}, cancel);
-
-
                     _logger.LogTrace("Building client packages...");
 
-                    if (_newPackaging)
-                    {
-                        await CommandHelperChecked("Failed to build client packages with Content Packaging",
-                            _repoPath, "dotnet", new[] { "run", "--project", "Content.Packaging", "client", "--no-wipe-release"}, cancel);
-                    }
-                    else
-                        await CommandHelperChecked("Failed to build client packages", _repoPath, "python", new[] {"Tools/package_client_build.py"}, cancel);
+                    await CommandHelperChecked("Failed to build client packages", _repoPath, "python", new[] {"Tools/package_client_build.py"}, cancel);
 
                     File.Move(Path.Combine(_repoPath, "release", ClientZipName), Path.Combine(binariesPath, ClientZipName), true);
+
+                    _logger.LogTrace("Building server packages...");
+                    await CommandHelperChecked("Failed to build server packages", _repoPath, "python", new[] {"Tools/package_server_build.py", "-p", serverPlatform}, cancel);
+
                     // Unless using Hybrid ACZ, a build.json file must be written.
                     await using (var stream = File.Open(serverPackage, FileMode.Open))
                     {
@@ -329,7 +296,7 @@ namespace SS14.Watchdog.Components.Updates
                 }
 
                 _logger.LogTrace("Applying server update.");
-
+                
                 if (Directory.Exists(binPath))
                 {
                     Directory.Delete(binPath, true);
@@ -355,7 +322,7 @@ namespace SS14.Watchdog.Components.Updates
                     RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 {
                     // chmod +x Robust.Server
-
+                    
                     var rsPath = Path.Combine(binPath, "Robust.Server");
                     if (File.Exists(rsPath))
                     {
@@ -365,7 +332,7 @@ namespace SS14.Watchdog.Components.Updates
                             FileAccessPermissions.OtherExecute;
                     }
                 }
-
+                
                 // ReSharper disable once RedundantTypeArgumentsOfMethod
                 return actualConfirmedHead;
             }
@@ -381,16 +348,16 @@ namespace SS14.Watchdog.Components.Updates
         {
             [JsonPropertyName("download")]
             public string Download { get; set; } = default!;
-
+            
             [JsonPropertyName("hash")]
             public string Hash { get; set; } = default!;
-
+            
             [JsonPropertyName("version")]
             public string Version { get; set; } = default!;
-
+            
             [JsonPropertyName("engine_version")]
             public string EngineVersion { get; set; } = default!;
-
+            
             [JsonPropertyName("fork_id")]
             public string ForkId { get; set; } = default!;
         }
